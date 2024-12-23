@@ -25,7 +25,7 @@ class Encoder_block(nn.Module):
         if not self.pre_norm: x = self.norm1(x)
         # phase 2: feed forward
         if self.pre_norm: x = self.norm2(x)
-        x = self.dropout2(self.ff2(self.dropout1(F.relu(self.ff1(x)))))
+        x = x + self.dropout2(self.ff2(self.dropout1(F.relu(self.ff1(x)))))
         if not self.pre_norm: x = self.norm2(x)
         return x
 
@@ -57,7 +57,7 @@ class Decoder_block(nn.Module):
         if not self.pre_norm: x = self.norm2(x)
         # phase 3: feed forward
         if self.pre_norm: x = self.norm3(x)
-        x = self.dropout2(self.ff2(self.dropout1(F.relu(self.ff1(x)))))
+        x = x + self.dropout2(self.ff2(self.dropout1(F.relu(self.ff1(x)))))
         if not self.pre_norm: x = self.norm3(x)
         return x
 
