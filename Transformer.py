@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import copy
 
 class Encoder_block(nn.Module):
     def __init__(self,
@@ -10,6 +9,7 @@ class Encoder_block(nn.Module):
                  ndim_feedforward=2048,
                  drop_out=0.1,
                  pre_norm=False):
+        super(Encoder_block, self).__init__()
         self.pre_norm = pre_norm
         self.self_attention = nn.MultiheadAttention(ndim, nhead, batch_first=True)
         self.norm1 = nn.LayerNorm(ndim)
@@ -21,7 +21,7 @@ class Encoder_block(nn.Module):
     def forward(self, x, attn_mask, padding_mask):
         # phase 1: self-attention
         if self.pre_norm: x = self.norm1(x)
-        x = x + self.self_attention(x,x,x,attn_mask=attn_mask,key_padding_mask=padding_mask)
+        x = x + self.self_attention(x,x,x,attn_mask=attn_mask,key_padding_mask=padding_mask)[0]
         if not self.pre_norm: x = self.norm1(x)
         # phase 2: feed forward
         if self.pre_norm: x = self.norm2(x)
@@ -36,6 +36,7 @@ class Decoder_block(nn.Module):
                  ndim_feedforward=2048,
                  drop_out=0.1,
                  pre_norm=False):
+        super(Decoder_block, self).__init__()
         self.pre_norm = pre_norm
         self.self_attention = nn.MultiheadAttention(ndim, nhead, batch_first=True)
         self.norm1 = nn.LayerNorm(ndim)
@@ -49,11 +50,11 @@ class Decoder_block(nn.Module):
     def forward(self, x, encoder_out, attn_mask, padding_mask):
         # phase 1: self-attention
         if self.pre_norm: x = self.norm1(x)
-        x = x + self.self_attention(x,x,x,attn_mask=attn_mask,key_padding_mask=padding_mask)
+        x = x + self.self_attention(x,x,x,attn_mask=attn_mask,key_padding_mask=padding_mask)[0]
         if not self.pre_norm: x = self.norm1(x)
         # phase 2: cross-attention
         if self.pre_norm: x = self.norm2(x)
-        x = x + self.cross_attention(x, encoder_out, encoder_out, attn_mask=attn_mask, key_padding_mask=padding_mask) # ????mask only take effect in the first layer???
+        x = x + self.cross_attention(x, encoder_out, encoder_out, attn_mask=attn_mask, key_padding_mask=padding_mask)[0]
         if not self.pre_norm: x = self.norm2(x)
         # phase 3: feed forward
         if self.pre_norm: x = self.norm3(x)
@@ -71,6 +72,7 @@ class Transformer(nn.Module):
                  ndim_feedforward=2048,
                  drop_out=0.1,
                  pre_norm=False):
+        super(Transformer, self).__init__()
         # sanity check
         if mode not in ['all', 'encoder_only', 'decoder_only']: raise ValueError("Unsupported mode.")
         if ndim % nhead != 0: raise ValueError("ndim must be divisible by nhead")
@@ -84,21 +86,53 @@ class Transformer(nn.Module):
             self.encoder_layers = nn.ModuleList([Encoder_block(self.nhead,
                                                                self.ndim,
                                                                self.ndim_feedforward,
-                                                               self.drop_out,
-                                                               self.pre_norm) for _ in range(self.nlayer_encoder)])
+                                                               drop_out,
+                                                               pre_norm) for _ in range(self.nlayer_encoder)])
             self.decoder_layers = nn.ModuleList([Decoder_block(self.nhead,
                                                                self.ndim,
                                                                self.ndim_feedforward,
-                                                               self.drop_out,
-                                                               self.pre_norm) for _ in range(self.nlayer_decoder)])
+                                                               drop_out,
+                                                               pre_norm) for _ in range(self.nlayer_decoder)])
         else:
             self.encoder_layers = nn.ModuleList([Encoder_block(self.nhead,
                                                                self.ndim,
                                                                self.ndim_feedforward,
-                                                               self.drop_out,
-                                                               self.pre_norm) for _ in range(self.nlayer_encoder if self.mode == 'encoder_only' else self.nlayer_decoder)])
+                                                               drop_out,
+                                                               pre_norm) for _ in range(self.nlayer_encoder if self.mode == 'encoder_only' else self.nlayer_decoder)])
             
         self.out = nn.Linear(self.ndim, self.vocabulary_size)
-    def forward(self, encoder):
-        # To-DO
+    def forward(self,
+                encoder_in,
+                decoder_in,
+                encoder_attn_mask,
+                decoder_attn_mask,
+                encoder_padding_mask,
+                decoder_padding_mask):
+        if self.mode == 'all':
+            encoder_out, decoder_out = encoder_in, None
+            for layer in self.encoder_layers:
+                encoder_out = layer(encoder_out, encoder_attn_mask, encoder_padding_mask)
+            for layer in self.decoder_layers:
+                decoder_out = layer(decoder_in, encoder_out, decoder_attn_mask, decoder_padding_mask)
+            return self.out(decoder_out)
+        else:
+            encoder_out = encoder_in if self.mode == 'encoder_only' else decoder_in
+            for layer in self.encoder_layers:
+                encoder_out = layer(encoder_out,
+                                    encoder_attn_mask if self.mode == 'encoder_only' else decoder_attn_mask,
+                                    encoder_padding_mask if self.mode == 'encoder_only' else decoder_padding_mask)
+            return self.out(encoder_out)
+        
+if __name__ == '__main__':
+    from torchviz import make_dot
+
+    # Perform a forward pass through the model
+    model = Transformer(10, 'all', [3,3], 2, 768, 2048, 0.1, False)
+    dummy_input = torch.randn(64, 768)
+
+    # Generate the graph
+    dot = make_dot(model(dummy_input, dummy_input, None, None, None, None), params=dict(model.named_parameters()))
+
+    # Render and save the graph to a file (e.g., .png or .pdf)
+    dot.render("/Volumes/Data/ZhangZhiyang/Documents/llm_reproduce", format="png")
 
