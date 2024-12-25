@@ -112,16 +112,16 @@ class Transformer(nn.Module):
         print('transformer initializing...')
         for m in self.modules():
             if isinstance(m, nn.Linear):
-                nn.init.constant_(m.weight, 0.02)
-                nn.init.constant_(m.bias, 0.02)
+                nn.init.normal_(m.weight, mean=0, std=0.02)
+                nn.init.zeros_(m.bias)
             elif isinstance(m, nn.MultiheadAttention):
-                nn.init.constant_(m.in_proj_weight, 0.02)
-                nn.init.constant_(m.in_proj_bias, 0.02)
-                nn.init.constant_(m.out_proj.weight, 0.02)
-                nn.init.constant_(m.out_proj.bias, 0.02)
+                nn.init.normal_(m.in_proj_weight, mean=0, std=0.02)
+                nn.init.zeros_(m.in_proj_bias)
+                nn.init.normal_(m.out_proj.weight, mean=0, std=0.02)
+                nn.init.zeros_(m.out_proj.bias)
             elif isinstance(m, nn.LayerNorm):
-                nn.init.constant_(m.weight, 0.02)
-                nn.init.constant_(m.bias, 0.02)
+                nn.init.normal_(m.weight, mean=0, std=0.02)
+                nn.init.zeros_(m.bias)
 
     def forward(self,
                 encoder_in,

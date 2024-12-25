@@ -36,8 +36,7 @@ class GPT(nn.Module):
         # for name, module in self.named_modules():
         #     print(f'{name}: {module.__class__.__name__}')
         print('embedding initializing...')
-        for m in self.modules():
-            if isinstance(m, nn.Embedding): nn.init.constant_(m.weight, 0.02)
+        for m in self.modules(): nn.init.normal_(m.weight, mean=0, std=0.02)
         
     def forward(self, seq, need_padding, padding_token):
         """seq shape: [batch, seq_length]"""
