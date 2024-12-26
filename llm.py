@@ -19,7 +19,7 @@ class GPT(nn.Module):
         self.embedding = nn.Embedding(vocabulary_size, embedding_size)
         # decoder_only transformer
         self.model = Transformer(vocabulary_size=vocabulary_size,
-                                 mode='decoder_only',
+                                 mode='encoder_only',
                                  nlayer=nlayer,
                                  nhead=nhead,
                                  ndim=ndim,
@@ -33,10 +33,11 @@ class GPT(nn.Module):
         self._ini_para()
 
     def _ini_para(self):
-        # for name, module in self.named_modules():
-        #     print(f'{name}: {module.__class__.__name__}')
+        for name, module in self.named_modules():
+            print(f'{name}: {module.__class__.__name__}')
         print('embedding initializing...')
-        for m in self.modules(): nn.init.normal_(m.weight, mean=0, std=0.02)
+        for m in self.modules():
+            if isinstance(m, nn.Embedding): nn.init.normal_(m.weight, mean=0, std=0.02)
         
     def forward(self, seq, need_padding, padding_token):
         """seq shape: [batch, seq_length]"""
@@ -46,12 +47,13 @@ class GPT(nn.Module):
         seq_embedding = self.embedding(seq)
         seq_embedding = seq_embedding + self.pos_encoding[0:seq_len,:]
         # feed into model.
-        out = self.model(encoder_in=None,
-                         decoder_in=seq_embedding,
-                         encoder_attn_mask=None,
-                         decoder_attn_mask=self.attn_mask,
-                         encoder_padding_mask=None,
-                         decoder_padding_mask=utils.gen_padding_mask(seq, padding_token) if need_padding else None)
+        out = self.model(encoder_in=seq_embedding,
+                         encoder_out=None,
+                         decoder_in=None,
+                         encoder_attn_mask=self.attn_mask,
+                         decoder_attn_mask=None,
+                         encoder_padding_mask=utils.gen_padding_mask(seq, padding_token) if need_padding else None,
+                         decoder_padding_mask=None)
         
         return out
 
@@ -72,4 +74,4 @@ if __name__ == '__main__':
               model_config['drop_out'],
               model_config['pre_norm']).to(device).train()
     dummy_input = torch.randint(0, 50000, (64, 128)).to(device)
-    print(gpt(dummy_input, False, 0).shape)
+    print(gpt(dummy_input, model_config['need_padding'], model_config['padding_token']).shape)

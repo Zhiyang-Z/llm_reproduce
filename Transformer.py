@@ -80,7 +80,7 @@ class Transformer(nn.Module):
         self.vocabulary_size, self.mode, self.nhead, self.ndim, self.ndim_feedforward = vocabulary_size, mode, nhead, ndim, ndim_feedforward
         if self.mode == 'all': self.nlayer_encoder, self.nlayer_decoder = nlayer[0], nlayer[1]
         elif self.mode == 'encoder_only': self.nlayer_encoder, self.nlayer_decoder = nlayer[0], None
-        else: self.nlayer_encoder, self.nlayer_decoder = None, nlayer[0]
+        else: self.nlayer_encoder, self.nlayer_decoder = None, nlayer[1]
         self.pre_norm = pre_norm
 
         if self.mode == 'all':
@@ -94,12 +94,18 @@ class Transformer(nn.Module):
                                                                self.ndim_feedforward,
                                                                drop_out,
                                                                pre_norm) for _ in range(self.nlayer_decoder)])
-        else:
+        elif self.mode == 'encoder_only':
             self.encoder_layers = nn.ModuleList([Encoder_Block(self.nhead,
                                                                self.ndim,
                                                                self.ndim_feedforward,
                                                                drop_out,
-                                                               pre_norm) for _ in range(self.nlayer_encoder if self.mode == 'encoder_only' else self.nlayer_decoder)])
+                                                               pre_norm) for _ in range(self.nlayer_encoder)])
+        else:
+            self.decoder_layers = nn.ModuleList([Decoder_Block(self.nhead,
+                                                               self.ndim,
+                                                               self.ndim_feedforward,
+                                                               drop_out,
+                                                               pre_norm) for _ in range(self.nlayer_decoder)])
 
         if self.pre_norm: self.final_norm = nn.LayerNorm(self.ndim)
         self.out = nn.Linear(self.ndim, self.vocabulary_size)
@@ -125,6 +131,7 @@ class Transformer(nn.Module):
 
     def forward(self,
                 encoder_in,
+                encoder_out,
                 decoder_in,
                 encoder_attn_mask=None,
                 decoder_attn_mask=None,
@@ -139,25 +146,29 @@ class Transformer(nn.Module):
                 decoder_out = layer(decoder_out, encoder_out, decoder_attn_mask, decoder_padding_mask)
             if self.pre_norm: decoder_out = self.final_norm(decoder_out)
             return self.out(decoder_out)
-        else:
-            encoder_out = encoder_in if self.mode == 'encoder_only' else decoder_in
+        elif self.mode == 'encoder_only':
+            encoder_out = encoder_in
             for layer in self.encoder_layers:
-                encoder_out = layer(encoder_out,
-                                    encoder_attn_mask if self.mode == 'encoder_only' else decoder_attn_mask,
-                                    encoder_padding_mask if self.mode == 'encoder_only' else decoder_padding_mask)
+                encoder_out = layer(encoder_out, encoder_attn_mask, encoder_padding_mask)
             if self.pre_norm: encoder_out = self.final_norm(encoder_out)
             return self.out(encoder_out)
+        else:
+            decoder_out = decoder_in
+            for layer in self.decoder_layers:
+                decoder_out = layer(decoder_out, encoder_out, decoder_attn_mask, decoder_padding_mask)
+            if self.pre_norm: decoder_out = self.final_norm(decoder_out)
+            return self.out(decoder_out)
         
 if __name__ == '__main__':
     from torchview import draw_graph
 
     # Perform a forward pass through the model
-    model = Transformer(50000, 'decoder_only', [2, 2], 2, 512, 2048, 0.1, True)
+    model = Transformer(50000, 'all', [2, 2], 2, 512, 2048, 0.1, True)
     dummy_input = torch.randn(64, 200, 512)
-    out = model(dummy_input, dummy_input)
+    out = model(dummy_input, None, dummy_input)
 
     # Visualize the model
-    model_visual = draw_graph(model, input_data=(dummy_input, dummy_input))
+    model_visual = draw_graph(model, input_data=(dummy_input, None, dummy_input))
 
     # To display the visualization (in a Jupyter notebook for example)
     model_visual.visual_graph.render('model_graph', format='png')
